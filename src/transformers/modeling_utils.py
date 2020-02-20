@@ -568,7 +568,10 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         return model
 
     def prepare_inputs_for_generation(self, input_ids, **kwargs):
-        return {"input_ids": input_ids}
+        inputs = {"input_ids": input_ids}
+        if self.config.is_decoder and "encoder_hidden_states" in kwargs:
+            inputs["encoder_hidden_states"] = kwargs.pop("encoder_hidden_states")
+        return inputs
 
     def _do_output_past(self, outputs):
         has_output_past = hasattr(self.config, "output_past") and self.config.output_past
@@ -597,9 +600,11 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         eos_token_ids=None,
         length_penalty=None,
         num_return_sequences=None,
+        encoder_hidden_states=None,
     ):
-        r""" Generates sequences for models with a LM head. The method currently supports greedy or penalized greedy decoding, sampling with top-k or nucleus sampling
-        and beam-search.
+        r""" Generates sequences for models with a LM head.
+        
+        The method currently supports greedy or penalized greedy decoding, sampling with top-k or nucleus sampling and beam-search.
 
         Adapted in part from `Facebook's XLM beam search code`_.
 
@@ -644,6 +649,9 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
             num_return_sequences: (`optional`) int
                 The number of independently computed returned sequences for each element in the batch. Default to 1.
+
+            encoder_hidden_states: (`optional`) `torch.tensor` of shape `(batch_size, sequence_length)`
+                When generating from the decoder model in an encoder-decoder framework, this should be encoder's outputs.
 
         Examples::
 
@@ -773,6 +781,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 pad_token_id,
                 eos_token_ids,
                 effective_batch_size,
+                encoder_hidden_states,
             )
 
         if num_return_sequences != 1:
@@ -792,6 +801,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         pad_token_id,
         eos_token_ids,
         batch_size,
+        encoder_hidden_states,
     ):
         """ Generate sequences for each example without beam search (num_beams == 1).
             All returned sequence are generated independantly.
@@ -802,7 +812,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         past = None
 
         while cur_len < max_length:
-            model_inputs = self.prepare_inputs_for_generation(input_ids, past=past)
+            model_inputs = self.prepare_inputs_for_generation(input_ids, past=past, encoder_hidden_states=encoder_hidden_states)
             outputs = self(**model_inputs)
             next_token_logits = outputs[0][:, -1, :]
 

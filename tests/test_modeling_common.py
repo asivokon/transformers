@@ -35,6 +35,7 @@ if is_torch_available():
         PretrainedConfig,
         PreTrainedModel,
         BertModel,
+        BertForMaskedLM,
         BertConfig,
         BERT_PRETRAINED_MODEL_ARCHIVE_MAP,
     )
@@ -645,3 +646,31 @@ class ModelUtilsTest(unittest.TestCase):
             self.assertEqual(model.config.output_attentions, True)
             self.assertEqual(model.config.output_hidden_states, True)
             self.assertEqual(model.config, config)
+
+    def test_generate(self):
+        class TestDecoder(BertForMaskedLM):
+            def forward(self, *args, **kwargs):
+                self.encoder_states_passed = kwargs.get('encoder_hidden_states') is not None
+                return super().forward(*args, **kwargs)
+
+        # Given an encoder and decoder
+        encoder = BertModel(BertConfig())
+        decoder = TestDecoder(BertConfig(is_decoder=True))
+        encoder.eval()
+        decoder.eval()
+
+        # When generating sequence from the decoder, the output should be conditioned on encoder's output
+        source_sequence_1 = torch.LongTensor([[0, 1, 2, 3, 4, 5]])
+        source_sequence_2 = torch.LongTensor([[10, 11, 12, 13]])
+        outputs_1 = decoder.generate(do_sample=False, max_length=5, encoder_hidden_states=encoder(source_sequence_1)[0])
+        outputs_2 = decoder.generate(do_sample=False, max_length=5, encoder_hidden_states=encoder(source_sequence_2)[0])
+
+        # Different encoder states lead to different decoded sequences
+        assert decoder.encoder_states_passed
+        assert outputs_1[0].tolist() != outputs_2[0].tolist()
+
+        # Sanity check: if encoders states are not passed, outputs should be the same
+        outputs_1 = decoder.generate(do_sample=False, max_length=5)
+        outputs_2 = decoder.generate(do_sample=False, max_length=5)
+        assert not decoder.encoder_states_passed
+        assert outputs_1[0].tolist() == outputs_2[0].tolist()
