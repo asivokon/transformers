@@ -20,6 +20,7 @@ import os.path
 import random
 import tempfile
 import unittest
+import unittest.mock
 
 from transformers import is_torch_available
 
@@ -438,6 +439,50 @@ class ModelTesterMixin:
             self.assertEqual(attentions[3].shape[-3], self.model_tester.num_attention_heads)
 
             self.assertDictEqual(model.config.pruned_heads, {0: [0], 1: [1, 2], 2: [1, 2]})
+
+    def test_init_weights_from_pretrained(self):
+
+        for model_class in self.all_model_classes:
+            config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+
+            model = model_class(config=config)
+            model.to(torch_device)
+            model.eval()
+
+            with tempfile.TemporaryDirectory() as temp_dir_name:
+                model.save_pretrained(temp_dir_name)
+                with unittest.mock.patch.object(model_class, "_init_weights") as init_weights:
+
+                    # Avoid initializing weights when loading a pretrained model
+                    model = model_class.from_pretrained(temp_dir_name)
+                    self.assertFalse(
+                        init_weights.called, "_init_weights should not be called when loading pretrained weights"
+                    )
+
+                    # Do initalize weights when creating a model from scratch
+                    model = model_class(config)
+                    self.assertTrue(init_weights.called)
+
+    def test_init_weights_from_pretrained__partial_state_dict(self):
+
+        for model_class in self.all_model_classes:
+            config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+
+            model = model_class(config)
+            model.to(torch_device)
+            model.eval()
+
+            # Given pretrained weights with some of the parameters missing
+            state_dict = model.state_dict()
+            param_name, _ = state_dict.popitem()
+
+            # When creating a model from the pretrained weights,
+            with unittest.mock.patch.object(model_class, "_init_weights") as init_weights:
+                model = model_class.from_pretrained(None, config=config, state_dict=state_dict)
+
+                # _init_weight should be called for the missing params only
+                # (we have one missing parameter in this case)
+                self.assertEqual(init_weights.call_count, 1)
 
     def test_hidden_states_output(self):
         config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()

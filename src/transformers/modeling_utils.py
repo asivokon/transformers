@@ -250,8 +250,10 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
     def init_weights(self):
         """ Initialize and prunes weights if needed. """
-        # Initialize weights
-        self.apply(self._init_weights)
+
+        # Initialize weights if needed
+        if not self.config.loaded_from_pretrained:
+            self.apply(self._init_weights)
 
         # Prune heads if needed
         if self.config.pruned_heads:
@@ -460,6 +462,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             resolved_archive_file = None
 
         # Instantiate model.
+        config.loaded_from_pretrained = True
         model = cls(config, *model_args, **model_kwargs)
 
         if state_dict is None and not from_tf:
@@ -556,6 +559,10 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                     )
                 )
 
+            # initialize weights that are not pretrained
+            for key in missing_keys:
+                model._init_weights(model._find_param_by_name(key))
+
         model.tie_weights()  # make sure word embedding weights are still tied if needed
 
         # Set model in evaluation mode to desactivate DropOut modules by default
@@ -580,6 +587,17 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             return True
 
         return False
+
+    def _find_param_by_name(self, name):
+        # Note: we cannot use `self.named_parameters()` for lookup
+        # because it doesn't list tied parameters
+
+        obj = self
+        for subname in name.split("."):
+            obj = getattr(obj, subname)
+        assert isinstance(obj, nn.Parameter)
+
+        return obj
 
     @torch.no_grad()
     def generate(

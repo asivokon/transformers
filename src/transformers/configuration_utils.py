@@ -63,6 +63,7 @@ class PretrainedConfig(object):
         self.torchscript = kwargs.pop("torchscript", False)  # Only used by PyTorch models
         self.use_bfloat16 = kwargs.pop("use_bfloat16", False)
         self.pruned_heads = kwargs.pop("pruned_heads", {})
+        self.loaded_from_pretrained = kwargs.pop("loaded_from_pretrained", False)
 
         # Is decoder is used in encoder-decoder models to differentiate encoder from decoder
         self.is_decoder = kwargs.pop("is_decoder", False)
